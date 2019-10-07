@@ -2,6 +2,9 @@ let { getKeyByValue, getcTime, parentPath, pathEnd, normalize } = require('./hel
 let { OSFSError } = require('./errors.js');
 let { VFSReadStream, VFSWriteStream } = require('./s.js');
 let THROWONBADUGID = false;
+let CONVERTBACKSLASH = true;
+
+let { inspect } = require('util');
 
 function getPermsPath(obj, path) {
   obj.getPerms(obj.fs.geteInode(path));
@@ -45,7 +48,12 @@ class FileSystemContext {
     if (symlink === undefined) symlink = true;
     if (mount === undefined) mount = true;
     if (cwd === undefined) cwd = this.cwd;
-    path = path.replace(/\\/g, '/');
+    let isbuf;
+    if (Buffer.isBuffer(path)) {
+      isbuf = true;
+      path = path.toString('latin1');
+    }
+    if (CONVERTBACKSLASH) path = path.replace(/\\/g, '/');
     if (path[0] == '/') path = path[0] + path.slice(1, Infinity).replace(/\/*$/, '');
     else path = path.replace(/\/*$/, '');
     path = normalize(path, cwd);
@@ -56,11 +64,13 @@ class FileSystemContext {
       if (mount) {
         let mind = this.mounts[0].indexOf(cp);
         if (mind > -1) {
+          let p = this.mounts[3][mind] + crp;
+          if (isbuf) p = Buffer.from(p, 'latin1');
           switch (this.mounts[1][mind]) {
             case 0:
-              return this.mounts[2][mind].mountNormalize ? this.mounts[2][mind].mountNormalize(this.mounts[3][mind] + crp, symlink, mount) : [this.mounts[2][mind], this.mounts[3][mind] + crp];
-            case 1: return [{fs: this.mounts[2][mind], cwd: '/', getPerms: () => ({read:1,write:1,execute:1})}, this.mounts[3][mind] + crp];
-            case 2: return [{...this.mounts[2][mind], fs: {geteInode: () => null}, cwd: '/', getPerms: () => ({read:1,write:1,execute:1})}, this.mounts[3][mind] + crp];
+              return this.mounts[2][mind].mountNormalize ? this.mounts[2][mind].mountNormalize(p, symlink, mount) : [this.mounts[2][mind], p];
+            case 1: return [{fs: this.mounts[2][mind], cwd: '/', getPerms: () => ({read:1,write:1,execute:1})}, p];
+            case 2: return [{...this.mounts[2][mind], fs: {geteInode: () => null}, cwd: '/', getPerms: () => ({read:1,write:1,execute:1})}, p];
           }
         }
       }
@@ -68,12 +78,13 @@ class FileSystemContext {
         let ino = this.fs.getInode(cp, false);
         if (ino != null) {
           if (this.fs.getInod(ino, 0) == 12) {
-            return this.mountNormalize(this.fs.inoarr[ino].toString(), symlink, mount, parentPath(cp));
+            return this.mountNormalize(this.fs.inoarr[ino], symlink, mount, parentPath(cp));
           }
         }
       }
     }
     path = normalize(path, this.cwd);
+    if (isbuf) path = Buffer.from(path, 'latin1');
     return [this, path];
   }
 
@@ -110,7 +121,7 @@ class FileSystemContext {
   }
 
   chdir(path) {
-    if (this.log) console.log(`${this.name}: chdir(${inspect(path)})`);
+    if (this.log) console.log(`${this.ts() + this.name}: chdir(${inspect(path)})`);
     path = normalize(path, this.cwd);
     let fsc = this.mountNormalize(path, false);
     if (!fsc[0].getPerms(fsc[0].fs.geteInode(fsc[1], false)).read) throw new OSFSError('EACCES');
@@ -118,7 +129,7 @@ class FileSystemContext {
   }
 
   realpathSync(path, options) {
-    if (this.log) console.log(`${this.name}: realpath(${inspect(path)})`);
+    if (this.log) console.log(`${this.ts() + this.name}: realpath(${inspect(path)})`);
     if (options === undefined) options = {};
     if (options.encoding === undefined) options.encoding = 'utf8';
     if (options.encoding == 'utf8') {
@@ -131,6 +142,7 @@ class FileSystemContext {
   }
 
   existsSync(path) {
+    if (this.log) console.log(`${this.ts() + this.name}: existsSync(${inspect(path)})`);
     let fsc = this.mountNormalize(path);
     try {
       if (!fsc[0].getPerms(fsc[0].fs.geteInode(parentPath(fsc[1]))).read) return false;
@@ -140,6 +152,7 @@ class FileSystemContext {
     }
   }
   accessSync(path, mode) {
+    if (this.log) console.log(`${this.ts() + this.name}: accessSync(${inspect(path)}, ${mode})`);
     let fsc = this.mountNormalize(path);
     if (mode == null) mode = 0;
     if (!fsc[0].fs) return fsc[0].accessSync(fsc[1], mode);
@@ -153,12 +166,14 @@ class FileSystemContext {
     if (mode & 1 && !perms.execute) throw new OSFSError('EACCES');
   }
   statSync(path, options) {
+    if (this.log) console.log(`${this.ts() + this.name}: statSync(${inspect(path)}${options ? ', ' + inspect(options) : ''})`);
     let fsc = this.mountNormalize(path);
     if (!fsc[0].fs) return fsc[0].statSync(fsc[1], options);
     if (!fsc[0].getPerms(fsc[0].fs.geteInode(fsc[1])).read) throw new OSFSError('EACCES');
     return fsc[0].fs.stat(fsc[1], options);
   }
   lstatSync(path, options) {
+    if (this.log) console.log(`${this.ts() + this.name}: lstatSync(${inspect(path)}${options ? ', ' + inspect(options) : ''})`);
     let fsc = this.mountNormalize(path, false);
     if (!fsc[0].fs) return fsc[0].lstatSync(fsc[1], options);
     if (!fsc[0].getPerms(fsc[0].fs.geteInode(fsc[1], false)).read) throw new OSFSError('EACCES');
@@ -166,18 +181,21 @@ class FileSystemContext {
   }
 
   chmodSync(path, mode) {
+    if (this.log) console.log(`${this.ts() + this.name}: chmodSync(${inspect(path)}, ${mode})`);
     let fsc = this.mountNormalize(path);
     if (!fsc[0].fs) return fsc[0].chmodSync(fsc[1], mode);
     if (this.uid != fsc[0].fs.getInod(fsc[0].fs.geteInode(fsc[1]), 7) && this.uid != 0) throw new OSFSError('EACCES');
     return fsc[0].fs.chmod(fsc[1], mode);
   }
   lchmodSync(path, mode) {
+    if (this.log) console.log(`${this.ts() + this.name}: lchmodSync(${inspect(path)}, ${mode})`);
     let fsc = this.mountNormalize(path, false);
     if (!fsc[0].fs) return fsc[0].lchmodSync(fsc[1], mode);
     if (this.uid != fsc[0].fs.getInod(fsc[0].fs.geteInode(fsc[1]), 7) && this.uid != 0) throw new OSFSError('EACCES');
     return fsc[0].fs.lchmod(fsc[1], mode);
   }
   chownSync(path, uid, gid) {
+    if (this.log) console.log(`${this.ts() + this.name}: chownSync(${inspect(path)}, ${uid}, ${gid})`);
     let fsc = this.mountNormalize(path);
     if (!fsc[0].fs) return fsc[0].chownSync(fsc[1], uid, gid);
     if (this.uid != fsc[0].fs.getInod(fsc[0].fs.geteInode(fsc[1]), 7) && this.uid != 0) throw new OSFSError('EACCES');
@@ -186,6 +204,7 @@ class FileSystemContext {
     return fsc[0].fs.chown(fsc[1], uid, gid);
   }
   lchownSync(path, uid, gid) {
+    if (this.log) console.log(`${this.ts() + this.name}: lchownSync(${inspect(path)}, ${uid}, ${gid})`);
     let fsc = this.mountNormalize(path, false);
     if (!fsc[0].fs) return fsc[0].lchownSync(fsc[1], uid, gid);
     if (this.uid != fsc[0].fs.getInod(fsc[0].fs.geteInode(fsc[1]), 7) && this.uid != 0) throw new OSFSError('EACCES');
@@ -194,16 +213,19 @@ class FileSystemContext {
     return fsc[0].fs.lchown(fsc[1], uid, gid);
   }
   chattrSync(path, attrb) {
+    if (this.log) console.log(`${this.ts() + this.name}: chattrSync(${inspect(path)}, ${attrb})`);
     let fsc = this.mountNormalize(path);
     if (this.uid != fsc[0].fs.getInod(fsc[0].fs.geteInode(fsc[1]), 7) && this.uid != 0) throw new OSFSError('EACCES', 'only owner can change attrs');
     return fsc[0].fs.chattr(path, attrb);
   }
   lchattrSync(path, attrb) {
+    if (this.log) console.log(`${this.ts() + this.name}: lchattrSync(${inspect(path)}, ${attrb})`);
     let fsc = this.mountNormalize(path, false);
     if (this.uid != fsc[0].fs.getInod(fsc[0].fs.geteInode(fsc[1], false), 7) && this.uid != 0) throw new OSFSError('EACCES', 'only owner can change attrs');
     return fsc[0].fs.lchattr(path, attrb);
   }
   utimesSync(path, atime, mtime) {
+    if (this.log) console.log(`${this.ts() + this.name}: utimesSync(${inspect(path)}, ${atime}, ${mtime})`);
     let fsc = this.mountNormalize(path);
     if (!fsc[0].fs) return fsc[0].utimesSync(fsc[1], atime, mtime);
     if (!fsc[0].getPerms(fsc[0].fs.geteInode(fsc[1])).write) throw new OSFSError('EACCES');
@@ -211,6 +233,7 @@ class FileSystemContext {
   }
 
   readFileSync(path, options) {
+    if (this.log) console.log(`${this.ts() + this.name}: readFileSync(${inspect(path)}${options ? ', ' + inspect(options) : ''})`);
     if (typeof path == 'number') {
       let fdo = this.fd[path];
       if (fdo === undefined) throw new Error('bad file descriptor');
@@ -226,6 +249,7 @@ class FileSystemContext {
     }
   }
   writeFileSync(path, buf, options) {
+    if (this.log) console.log(`${this.ts() + this.name}: writeFileSync(${inspect(path)}, ${inspect(buf)}${options ? ', ' + inspect(options) : ''})`);
     if (typeof path == 'number') {
       let fdo = this.fd[path];
       if (fdo === undefined) throw new Error('bad file descriptor');
@@ -243,6 +267,7 @@ class FileSystemContext {
     }
   }
   appendFileSync(path, buf, options) {
+    if (this.log) console.log(`${this.ts() + this.name}: appendFileSync(${inspect(path)}, ${inspect(buf)}${options ? ', ' + inspect(options) : ''})`);
     if (typeof path == 'number') {
       let fdo = this.fd[path];
       if (fdo === undefined) throw new Error('bad file descriptor');
@@ -260,6 +285,7 @@ class FileSystemContext {
     }
   }
   truncateSync(path, len) {
+    if (this.log) console.log(`${this.ts() + this.name}: truncateSync(${inspect(path)}, ${len})`);
     let fsc = this.mountNormalize(path);
     if (!fsc[0].fs) return fsc[0].truncateSync(fsc[1], len);
     if (!fsc[0].getPerms(fsc[0].fs.geteInode(parentPath(fsc[1]))).write) throw new OSFSError('EACCES');
@@ -269,6 +295,7 @@ class FileSystemContext {
   }
 
   createReadStream(path, options) {
+    if (this.log) console.log(`${this.ts() + this.name}: createReadStream(${inspect(path)}${options ? ', ' + inspect(options) : ''})`);
     if (options === undefined) options = {};
     if (options.encoding === undefined) options.encoding = null;
     if (options.fd === undefined) options.fd = null;
@@ -280,6 +307,7 @@ class FileSystemContext {
     return new VFSReadStream(this, path, options);
   }
   createWriteStream(path, options) {
+    if (this.log) console.log(`${this.ts() + this.name}: createWriteStream(${inspect(path)}${options ? ', ' + inspect(options) : ''})`);
     if (options === undefined) options = {};
     if (options.encoding === undefined) options.encoding = 'utf8';
     if (options.fd === undefined) options.fd = null;
@@ -293,6 +321,7 @@ class FileSystemContext {
   }
 
   linkSync(pathf, patht) {
+    if (this.log) console.log(`${this.ts() + this.name}: linkSync(${inspect(pathf)}, ${inspect(patht)})`);
     let fscf = this.mountNormalize(pathf, false);
     let fsct = this.mountNormalize(patht);
     if (!fscf[0].fs || !fsct[0].fs) {
@@ -307,6 +336,7 @@ class FileSystemContext {
     return fscf[0].fs.link(fscf[1], fsct[1]);
   }
   unlinkSync(path) {
+    if (this.log) console.log(`${this.ts() + this.name}: unlinkSync(${inspect(path)})`);
     let fsc = this.mountNormalize(path, false);
     if (!fsc[0].fs) return fsc[0].unlinkSync(fsc[1]);
     if (!fsc[0].getPerms(fsc[0].fs.geteInode(fsc[1], false)).write) throw new OSFSError('EACCES');
@@ -314,6 +344,7 @@ class FileSystemContext {
   }
 
   copyFileSync(pathf, patht, flags) {
+    if (this.log) console.log(`${this.ts() + this.name}: copyFileSync(${inspect(pathf)}, ${inspect(patht)}, ${flags})`);
     if (flags === undefined) flags = 0;
     let fscf = this.mountNormalize(pathf);
     let fsct = this.mountNormalize(patht);
@@ -334,6 +365,7 @@ class FileSystemContext {
   }
 
   readlinkSync(path, options) {
+    if (this.log) console.log(`${this.ts() + this.name}: readlinkSync(${inspect(path)}${options ? ', ' + inspect(options) : ''})`);
     let fsc = this.mountNormalize(path, false);
     if (!fsc[0].fs) return fsc[0].readlinkSync(fsc[1]);
     if (!fsc[0].getPerms(fsc[0].fs.geteInode(fsc[1], false)).read) throw new OSFSError('EACCES');
@@ -341,6 +373,7 @@ class FileSystemContext {
   }
 
   symlinkSync(pathf, patht, type) {
+    if (this.log) console.log(`${this.ts() + this.name}: symlinkSync(${inspect(pathf)}, ${inspect(patht)})`);
     let fsct = this.mountNormalize(patht);
     if (!fsct[0].fs) return fsct[0].symlinkSync(pathf, fsct[1], type);
     if (!fsct[0].getPerms(fsct[0].fs.geteInode(parentPath(fsct[1]))).write) throw new OSFSError('EACCES');
@@ -350,6 +383,7 @@ class FileSystemContext {
   }
 
   readdirSync(path, options) {
+    if (this.log) console.log(`${this.ts() + this.name}: readdirSync(${inspect(path)}${options ? ', ' + inspect(options) : ''})`);
     let fsc = this.mountNormalize(path);
     if (!fsc[0].fs) return fsc[0].readdirSync(fsc[1], options);
     if (!fsc[0].getPerms(fsc[0].fs.geteInode(fsc[1])).read) throw new OSFSError('EACCES');
@@ -357,6 +391,7 @@ class FileSystemContext {
   }
 
   mkdirSync(path, options) {
+    if (this.log) console.log(`${this.ts() + this.name}: mkdirSync(${inspect(path)}${options ? ', ' + inspect(options) : ''})`);
     if (options === undefined) options = {};
     if (options.mode === undefined) options.mode = 0o777;
     let fsc = this.mountNormalize(path);
@@ -368,6 +403,7 @@ class FileSystemContext {
   }
 
   renameSync(pathf, patht) {
+    if (this.log) console.log(`${this.ts() + this.name}: renameSync(${inspect(pathf)}, ${inspect(patht)})`);
     let fscf = this.mountNormalize(pathf, false);
     let fsct = this.mountNormalize(patht);
     if (!fscf[0].fs || !fsct[0].fs) {
@@ -383,6 +419,7 @@ class FileSystemContext {
   }
 
   rmdirSync(path) {
+    if (this.log) console.log(`${this.ts() + this.name}: rmdirSync(${inspect(path)})`);
     let fsc = this.mountNormalize(path, false);
     if (!fsc[0].fs) return fsc[0].rmdirSync(fsc[1]);
     if (!fsc[0].getPerms(fsc[0].fs.geteInode(fsc[1], false)).write) throw new OSFSError('EACCES');
@@ -613,6 +650,7 @@ class FileSystemContext {
   }
 
   openSync(path, flags, mode) {
+    if (this.log) console.log(`${this.ts() + this.name}: openSync(${inspect(path)}, ${inspect(flags)}, ${mode})`);
     if (flags === undefined) flags = 'r';
     let mn = this.mountNormalize(path);
     if (!mn[0].fs) {
@@ -668,6 +706,7 @@ class FileSystemContext {
     }
   }
   closeSync(fd) {
+    if (this.log) console.log(`${this.ts() + this.name}: closeSync(${fd})`);
     let fdo = this.fd[fd];
     if (fdo === undefined) throw new Error('bad file descriptor');
     if (fdo[0] == 'f') fdo[1].closeSync(fdo[2]);
@@ -699,6 +738,7 @@ class FileSystemContext {
   }
 
   readSync(fd, buffer, offset, length, position) {
+    if (this.log) console.log(`${this.ts() + this.name}: readSync(${fd}, ${length}, ${position})`);
     let fdo = this.fd[fd];
     if (fdo === undefined) throw new Error('bad file descriptor');
     if (fdo[0] == 'f') return fdo[1].readSync(fdo[2], buffer, offset, length, position);
@@ -709,6 +749,7 @@ class FileSystemContext {
     return res;
   }
   writeSync(fd, buffer, offset, length, position) {
+    if (this.log) console.log(`${this.ts() + this.name}: writeSync(${fd}, ${inspect(buffer)}, ${offset}, ${length}, ${position})`);
     let fdo = this.fd[fd];
     if (fdo === undefined) throw new Error('bad file descriptor');
     if (fdo[0] == 'f') return fdo[1].writeSync(fdo[2], buffer, offset, length, position);
@@ -726,6 +767,7 @@ class FileSystemContext {
   }
 
   fstatSync(fd, options) {
+    if (this.log) console.log(`${this.ts() + this.name}: fstatSync(${fd}${options ? ', ' + inspect(options) : ''})`);
     let fdo = this.fd[fd];
     if (fdo === undefined) throw new Error('bad file descriptor');
     if (fdo[0] == 'f') return fdo[1].fstatSync(fdo[2], options);
@@ -734,6 +776,7 @@ class FileSystemContext {
   }
 
   fchmodSync(fd, mode) {
+    if (this.log) console.log(`${this.ts() + this.name}: fchmodSync(${fd}, ${mode})`);
     let fdo = this.fd[fd];
     if (fdo === undefined) throw new Error('bad file descriptor');
     if (fdo[0] == 'f') return fdo[1].fchmodSync(fdo[2], mode);
@@ -741,6 +784,7 @@ class FileSystemContext {
     return fdo[1].fs.chmodFD(fdo[2], mode);
   }
   fchownSync(fd, uid, gid) {
+    if (this.log) console.log(`${this.ts() + this.name}: fchownSync(${fd}, ${uid}, ${gid})`);
     let fdo = this.fd[fd];
     if (fdo === undefined) throw new Error('bad file descriptor');
     if (fdo[0] == 'f') return fdo[1].fchownSync(fdo[2], uid, gid);
@@ -748,6 +792,7 @@ class FileSystemContext {
     return fdo[1].fs.chownFD(fdo[2], uid, gid);
   }
   futimesSync(fd, atime, mtime) {
+    if (this.log) console.log(`${this.ts() + this.name}: futimesSync(${fd}, ${atime}, ${mtime})`);
     let fdo = this.fd[fd];
     if (fdo === undefined) throw new Error('bad file descriptor');
     if (fdo[0] == 'f') return fdo[1].futimesSync(fdo[2], atime, mtime);
@@ -756,6 +801,7 @@ class FileSystemContext {
   }
 
   ftruncateSync(fd, len) {
+    if (this.log) console.log(`${this.ts() + this.name}: ftruncateSync(${fd}, ${len})`);
     let fdo = this.fd[fd];
     if (fdo === undefined) throw new Error('bad file descriptor');
     if (fdo[0] == 'f') return fdo[1].ftruncateSync(fdo[2], len);
@@ -833,11 +879,13 @@ class FileSystemContext {
   }
 
   fdatasyncSync(fd) {
+    if (this.log) console.log(`${this.ts() + this.name}: fdatasyncSync(${fd})`);
     let fdo = this.fd[fd];
     if (fdo === undefined) throw new Error('bad file descriptor');
     if (!fdo[1].fs) return fdo[1].fdatasyncSync(fdo[2]);
   }
   fsyncSync(fd) {
+    if (this.log) console.log(`${this.ts() + this.name}: fsyncSync(${fd})`);
     let fdo = this.fd[fd];
     if (fdo === undefined) throw new Error('bad file descriptor');
     if (!fdo[1].fs) return fdo[1].fsyncSync(fdo[2]);
@@ -863,12 +911,15 @@ class FileSystemContext {
   }
 
   fsStat(path) {
+    if (this.log) console.log(`${this.ts() + this.name}: fsStat(${inspect(path)})`);
     let fsc = this.mountNormalize(path);
+    if (!fsc[0].fs) return null;
     if (!fsc[0].getPerms(fsc[0].fs.geteInode(fsc[1])).read) throw new OSFSError('EACCES');
     return fsc[0].fs.fsStat(fsc[1]);
   }
 
   mount(pathf, typ, fs, patht) {
+    if (this.log) console.log(`${this.ts() + this.name}: mount(${inspect(pathf)}, ${typ}, ${fs}, ${patht})`);
     if (patht === undefined) patht = '/';
     pathf = normalize(pathf, this.cwd);
     patht = normalize(patht);
@@ -879,12 +930,18 @@ class FileSystemContext {
     this.mounts[3].push(patht);
   }
   unmount(path) {
+    if (this.log) console.log(`${this.ts() + this.name}: unmount(${inspect(path)})`);
     let mind = this.mounts[0].indexOf(path);
     if (mind < 0) throw new Error('nonexistent mount path');
     this.mounts[0].splice(mind, 1);
     this.mounts[1].splice(mind, 1);
     this.mounts[2].splice(mind, 1);
     this.mounts[3].splice(mind, 1);
+  }
+
+  ts() {
+    if (this.logts) return `[${new Date().toISOString()}] `;
+    else return '';
   }
 
   enableLogging(name) {

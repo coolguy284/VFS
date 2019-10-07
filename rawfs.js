@@ -1,6 +1,6 @@
 // jshint -W041
 let fs = require('fs');
-let { getcTime, parentPath, pathEnd, normalize, fnbufencode, fnbufdecode } = require('./helperf.js');
+let { getcTime, pathSplit, pathJoin, parentPath, pathEnd, normalize, fnbufencode, fnbufdecode } = require('./helperf.js');
 let { ReadOnlyFSError, OSFSError } = require('./errors.js');
 let { VFSImportRFSStream, VFSExportRFSStream } = require('./s.js');
 let INODSIZE = 32;
@@ -133,7 +133,7 @@ class FileSystem {
         if (x[i] == 0x3a) {
           let buf = fnbufdecode(Buffer.from(x.slice(0, i)));
           let ino = Number(Buffer.from(x.slice(i + 1, x.length)).toString());
-          if (encoding == null) return [buf, ino];
+          if (encoding == null || encoding == 'buffer') return [buf, ino];
           else return [buf.toString(encoding), ino];
         }
       }
@@ -192,27 +192,42 @@ class FileSystem {
     return ino;
   }
 
-  getInode(path, symlink) {
+  getInode(pathr, symlink) {
     if (symlink === undefined) symlink = true;
+    let isbuf, path;
+    if (Buffer.isBuffer(path)) {
+      isbuf = true;
+      path = pathr.toString('latin1');
+    } else path = pathr.toString();
     if (path == '/') {
       return 0;
     } else if (this.allowinoacc && /^<\d+>$/.test(path)) {
       return parseInt(path.substring(1, path.length - 1));
     }
     let ino = 0;
-    let patharr = path.split('/');
-    if (this.allowinoacc && /^<\d+>$/.test(patharr[0])) {
-      ino = parseInt(patharr[0].substring(1, patharr[0].length - 1));
+    let patharr = pathSplit(pathr), v;
+    if (this.allowinoacc && /^<\d+>$/.test(v = patharr[0])) {
+      ino = parseInt(v.substring(1, patharr[0].length - 1));
     }
     patharr.splice(0, 1);
     for (let i in patharr) {
-      let cp = normalize(patharr.slice(0, parseInt(i) + 1).join('/'));
-      let fc = this.parseFolder(this.inoarr[ino]);
-      let nino = null;
-      for (let j in fc) {
-        if (fc[j][0] == patharr[i]) {
-          nino = fc[j][1];
-          break;
+      let cp = normalize(pathJoin(patharr.slice(0, parseInt(i) + 1)));
+      let fc, nino = null;
+      if (isbuf) {
+        fc = this.parseFolder(this.inoarr[ino], null);
+        for (let j in fc) {
+          if (fc[j][0].equals(patharr[i])) {
+            nino = fc[j][1];
+            break;
+          }
+        }
+      } else {
+        fc = this.parseFolder(this.inoarr[ino]);
+        for (let j in fc) {
+          if (fc[j][0] == patharr[i]) {
+            nino = fc[j][1];
+            break;
+          }
         }
       }
       if (nino != null) {
@@ -221,9 +236,9 @@ class FileSystem {
         return null;
       }
       if (this.getInod(ino, 0) == 10 && (symlink || parseInt(i) != patharr.length - 1)) {
-        ino = this.getInode(normalize(this.inoarr[ino].toString(), parentPath(cp)));
+        ino = this.getInode(normalize(this.inoarr[ino], parentPath(cp)));
       } else if (this.getInod(ino, 0) != 4 && parseInt(i) != patharr.length - 1) {
-        throw new OSFSError('ENOTDIR', cp);
+        throw new OSFSError('ENOTDIR', cp.toString());
       }
     }
     return ino;
@@ -297,11 +312,11 @@ class FileSystem {
   }
 
   exists(path) {
-    if (this.log) console.log(`${this.name}: exists(${inspect(path)})`);
+    if (this.log) console.log(`${this.ts() + this.name}: exists(${inspect(path)})`);
     return this.getInode(path) != null;
   }
   stat(path, options) {
-    if (this.log) console.log(`${this.name}: stat(${inspect(path)}${options ? ', ' + inspect(options) : ''}`);
+    if (this.log) console.log(`${this.ts() + this.name}: stat(${inspect(path)}${options ? ', ' + inspect(options) : ''})`);
     let ino = this.geteInode(path);
     if (options && options.bigint) {
       return new fs.Stats(
@@ -340,7 +355,7 @@ class FileSystem {
     }
   }
   lstat(path, options) {
-    if (this.log) console.log(`${this.name}: lstat(${inspect(path)}${options ? ', ' + inspect(options) : ''}`);
+    if (this.log) console.log(`${this.ts() + this.name}: lstat(${inspect(path)}${options ? ', ' + inspect(options) : ''})`);
     let ino = this.geteInode(path, false);
     if (options && options.bigint) {
       return new fs.Stats(
@@ -379,7 +394,7 @@ class FileSystem {
     }
   }
   statFD(ino, options) {
-    if (this.log) console.log(`${this.name}: fstat(${ino}${options ? ', ' + inspect(options) : ''}`);
+    if (this.log) console.log(`${this.ts() + this.name}: fstat(${ino}${options ? ', ' + inspect(options) : ''})`);
     if (options && options.bigint) {
       return new fs.Stats(
         BigInt(50), // dev
@@ -417,7 +432,7 @@ class FileSystem {
     }
   }
   lsattr(path) {
-    if (this.log) console.log(`${this.name}: lsattr(${inspect(path)})`);
+    if (this.log) console.log(`${this.ts() + this.name}: lsattr(${inspect(path)})`);
     let ino = this.geteInode(path);
     let attrs = [];
     let attrv = this.getInod(ino, 1);
@@ -429,7 +444,7 @@ class FileSystem {
     return attrs;
   }
   llsattr(path) {
-    if (this.log) console.log(`${this.name}: llsattr(${inspect(path)})`);
+    if (this.log) console.log(`${this.ts() + this.name}: llsattr(${inspect(path)})`);
     let ino = this.geteInode(path, false);
     let attrs = [];
     let attrv = this.getInod(ino, 1);
@@ -442,7 +457,7 @@ class FileSystem {
   }
 
   access(path, mode) {
-    if (this.log) console.log(`${this.name}: access(${inspect(path)}, ${mode})`);
+    if (this.log) console.log(`${this.ts() + this.name}: access(${inspect(path)}, ${mode})`);
     let ino = this.geteInode(path);
     if (this.writable) {
       this.updateFileTimes(ino, 4);
@@ -451,7 +466,7 @@ class FileSystem {
   }
 
   chmod(path, mode) {
-    if (this.log) console.log(`${this.name}: chmod(${inspect(path)}, ${mode})`);
+    if (this.log) console.log(`${this.ts() + this.name}: chmod(${inspect(path)}, ${mode})`);
     if (!this.writable) throw new OSFSError('EROFS');
     if (mode < 0) throw new OSFSError('EINVAL', 'invalid permission mode');
     mode = mode & 0o777;
@@ -462,7 +477,7 @@ class FileSystem {
     this.archive = true;
   }
   lchmod(path, mode) {
-    if (this.log) console.log(`${this.name}: lchmod(${inspect(path)}, ${mode})`);
+    if (this.log) console.log(`${this.ts() + this.name}: lchmod(${inspect(path)}, ${mode})`);
     if (!this.writable) throw new OSFSError('EROFS');
     if (mode < 0) throw new OSFSError('EINVAL', 'invalid permission mode');
     mode = mode & 0o777;
@@ -473,7 +488,7 @@ class FileSystem {
     this.archive = true;
   }
   chmodFD(ino, mode) {
-    if (this.log) console.log(`${this.name}: fchmod(${ino}, ${mode})`);
+    if (this.log) console.log(`${this.ts() + this.name}: fchmod(${ino}, ${mode})`);
     if (!this.writable) throw new OSFSError('EROFS');
     if (mode < 0) throw new OSFSError('EINVAL', 'invalid permission mode');
     mode = mode & 0o777;
@@ -483,7 +498,7 @@ class FileSystem {
     this.archive = true;
   }
   chown(path, uid, gid) {
-    if (this.log) console.log(`${this.name}: chown(${inspect(path)}, ${uid}, ${gid})`);
+    if (this.log) console.log(`${this.ts() + this.name}: chown(${inspect(path)}, ${uid}, ${gid})`);
     if (!this.writable) throw new OSFSError('EROFS');
     let ino = this.geteInode(path);
     if (this.getInod(ino, 1) & 128) throw new OSFSError('EPERM', 'file immutable');
@@ -493,7 +508,7 @@ class FileSystem {
     this.archive = true;
   }
   lchown(path, uid, gid) {
-    if (this.log) console.log(`${this.name}: lchown(${inspect(path)}, ${uid}, ${gid}})`);
+    if (this.log) console.log(`${this.ts() + this.name}: lchown(${inspect(path)}, ${uid}, ${gid}})`);
     if (!this.writable) throw new OSFSError('EROFS');
     let ino = this.geteInode(path, false);
     if (this.getInod(ino, 1) & 128) throw new OSFSError('EPERM', 'file immutable');
@@ -503,7 +518,7 @@ class FileSystem {
     this.archive = true;
   }
   chownFD(ino, uid, gid) {
-    if (this.log) console.log(`${this.name}: fchown(${ino}, ${uid}, ${gid})`);
+    if (this.log) console.log(`${this.ts() + this.name}: fchown(${ino}, ${uid}, ${gid})`);
     if (!this.writable) throw new OSFSError('EROFS');
     let ino = this.geteInode(path);
     if (this.getInod(ino, 1) & 128) throw new OSFSError('EPERM', 'file immutable');
@@ -513,7 +528,7 @@ class FileSystem {
     this.archive = true;
   }
   chattr(path, attrs) {
-    if (this.log) console.log(`${this.name}: chattr(${inspect(path)}, ${attrs})`);
+    if (this.log) console.log(`${this.ts() + this.name}: chattr(${inspect(path)}, ${attrs})`);
     if (!this.writable) throw new OSFSError('EROFS');
     let ino = this.geteInode(path);
     let attrb = this.getInod(ino, 1);
@@ -538,7 +553,7 @@ class FileSystem {
     this.archive = true;
   }
   lchattr(path, attrs) {
-    if (this.log) console.log(`${this.name}: lchattr(${inspect(path)}, ${attrs})`);
+    if (this.log) console.log(`${this.ts() + this.name}: lchattr(${inspect(path)}, ${attrs})`);
     if (!this.writable) throw new OSFSError('EROFS');
     let ino = this.geteInode(path, false);
     let attrb = this.getInod(ino, 1);
@@ -563,7 +578,7 @@ class FileSystem {
     this.archive = true;
   }
   utimes(path, atime, mtime) {
-    if (this.log) console.log(`${this.name}: utimes(${inspect(path)}, ${atime}, ${mtime})`);
+    if (this.log) console.log(`${this.ts() + this.name}: utimes(${inspect(path)}, ${atime}, ${mtime})`);
     if (!this.writable) throw new OSFSError('EROFS');
     let ino = this.geteInode(path);
     if (this.getInod(ino, 1) & 128) throw new OSFSError('EPERM', 'file immutable');
@@ -573,7 +588,7 @@ class FileSystem {
     this.archive = true;
   }
   utimesFD(ino, atime, mtime) {
-    if (this.log) console.log(`${this.name}: futimes(${ino}, ${atime}, ${mtime})`);
+    if (this.log) console.log(`${this.ts() + this.name}: futimes(${ino}, ${atime}, ${mtime})`);
     if (!this.writable) throw new OSFSError('EROFS');
     if (this.getInod(ino, 1) & 128) throw new OSFSError('EPERM', 'file immutable');
     this.setInod(ino, 5, Number(atime));
@@ -583,7 +598,7 @@ class FileSystem {
   }
 
   readFile(path, options) {
-    if (this.log) console.log(`${this.name}: readFile(${inspect(path)}${options ? ', ' + inspect(options) : ''}`);
+    if (this.log) console.log(`${this.ts() + this.name}: readFile(${inspect(path)}${options ? ', ' + inspect(options) : ''})`);
     if (typeof options == 'string') options = {encoding:options};
     if (options === undefined) options = {};
     if (options.encoding === undefined) options.encoding = null;
@@ -593,7 +608,7 @@ class FileSystem {
     else return this.inoarr[ino].toString(options.encoding);
   }
   readFileFD(ino, sp, options) {
-    if (this.log) console.log(`${this.name}: freadFile(${ino}, ${sp}${options ? ', ' + inspect(options) : ''}`);
+    if (this.log) console.log(`${this.ts() + this.name}: freadFile(${ino}, ${sp}${options ? ', ' + inspect(options) : ''})`);
     if (typeof options == 'string') options = {encoding:options};
     if (options === undefined) options = {};
     if (options.encoding === undefined) options.encoding = null;
@@ -602,7 +617,7 @@ class FileSystem {
     else return this.inoarr[ino].slice(sp, Infinity).toString(options.encoding);
   }
   writeFile(path, buf, options, uid, gid) {
-    if (this.log) console.log(`${this.name}: writeFile(${inspect(path)}, ${inspect(buf)}${options ? ', ' + inspect(options) : ''}`);
+    if (this.log) console.log(`${this.ts() + this.name}: writeFile(${inspect(path)}, ${inspect(buf)}${options ? ', ' + inspect(options) : ''})`);
     if (typeof options == 'string') options = {encoding:options};
     if (options === undefined) options = {};
     if (options.encoding === undefined) options.encoding = 'utf8';
@@ -622,7 +637,7 @@ class FileSystem {
     this.archive = true;
   }
   writeFileFD(ino, sp, buf, options) {
-    if (this.log) console.log(`${this.name}: fwriteFile(${ino}, ${sp}, ${inspect(buf)}${options ? ', ' + inspect(options) : ''}`);
+    if (this.log) console.log(`${this.ts() + this.name}: fwriteFile(${ino}, ${sp}, ${inspect(buf)}${options ? ', ' + inspect(options) : ''})`);
     if (typeof options == 'string') options = {encoding:options};
     if (options === undefined) options = {};
     if (options.encoding === undefined) options.encoding = 'utf8';
@@ -640,7 +655,7 @@ class FileSystem {
     this.archive = true;
   }
   appendFile(path, buf, options) {
-    if (this.log) console.log(`${this.name}: appendFile(${inspect(path)}, ${inspect(buf)}${options ? ', ' + inspect(options) : ''}`);
+    if (this.log) console.log(`${this.ts() + this.name}: appendFile(${inspect(path)}, ${inspect(buf)}${options ? ', ' + inspect(options) : ''})`);
     if (typeof options == 'string') options = {encoding:options};
     if (options === undefined) options = {};
     if (options.encoding === undefined) options.encoding = 'utf8';
@@ -661,7 +676,7 @@ class FileSystem {
     this.archive = true;
   }
   appendFileFD(ino, sp, buf, options) {
-    if (this.log) console.log(`${this.name}: fappendFile(${ino}, ${sp}, ${inspect(buf)}${options ? ', ' + inspect(options) : ''}`);
+    if (this.log) console.log(`${this.ts() + this.name}: fappendFile(${ino}, ${sp}, ${inspect(buf)}${options ? ', ' + inspect(options) : ''})`);
     if (typeof options == 'string') options = {encoding:options};
     if (options === undefined) options = {};
     if (options.encoding === undefined) options.encoding = 'utf8';
@@ -675,7 +690,7 @@ class FileSystem {
     this.archive = true;
   }
   truncate(path, len) {
-    if (this.log) console.log(`${this.name}: truncate(${inspect(path)}, ${len})`);
+    if (this.log) console.log(`${this.ts() + this.name}: truncate(${inspect(path)}, ${len})`);
     if (len === undefined) len = 0;
     if (!this.writable) throw new OSFSError('EROFS');
     let ino = this.geteInode(path);
@@ -694,7 +709,7 @@ class FileSystem {
     this.archive = true;
   }
   truncateFD(ino, len) {
-    if (this.log) console.log(`${this.name}: ftruncate(${ino}, ${len})`);
+    if (this.log) console.log(`${this.ts() + this.name}: ftruncate(${ino}, ${len})`);
     if (len === undefined) len = 0;
     if (!this.writable) throw new OSFSError('EROFS');
     if (this.getInod(ino, 1) & 128) throw new OSFSError('EPERM', 'file immutable');
@@ -713,7 +728,7 @@ class FileSystem {
   }
 
   link(pathf, patht, nincref) {
-    if (this.log) console.log(`${this.name}: link(${inspect(pathf)}, ${inspect(patht)}, ${nincref})`);
+    if (this.log) console.log(`${this.ts() + this.name}: link(${inspect(pathf)}, ${inspect(patht)}, ${nincref})`);
     if (!this.writable) throw new OSFSError('EROFS');
     let ino = this.geteInode(pathf, false);
     if (this.getInod(ino, 1) & 128) throw new OSFSError('EPERM', 'file immutable');
@@ -723,7 +738,7 @@ class FileSystem {
     this.archive = true;
   }
   unlink(path, ndecref) {
-    if (this.log) console.log(`${this.name}: unlink(${inspect(path)}, ${nincref})`);
+    if (this.log) console.log(`${this.ts() + this.name}: unlink(${inspect(path)}, ${nincref})`);
     if (!this.writable) throw new OSFSError('EROFS');
     let inop = this.geteInode(parentPath(path));
     if (this.getInod(inop, 1) & 128) throw new OSFSError('EPERM', 'parent folder immutable');
@@ -736,7 +751,7 @@ class FileSystem {
   }
 
   copyFile(pathf, patht, flags, uid, gid) {
-    if (this.log) console.log(`${this.name}: copyFile(${inspect(pathf)}, ${inspect(patht)}, ${flags}, ${uid}, ${gid})`);
+    if (this.log) console.log(`${this.ts() + this.name}: copyFile(${inspect(pathf)}, ${inspect(patht)}, ${flags}, ${uid}, ${gid})`);
     flags = Number(flags);
     if (flags != flags) throw new OSFSError('EINVAL', 'Bad flag value');
     if (uid === undefined) uid = 0;
@@ -755,7 +770,7 @@ class FileSystem {
   }
 
   readlink(path, options) {
-    if (this.log) console.log(`${this.name}: readlink(${inspect(path)}${options ? ', ' + inspect(options) : ''}`);
+    if (this.log) console.log(`${this.ts() + this.name}: readlink(${inspect(path)}${options ? ', ' + inspect(options) : ''})`);
     let ino = this.geteInode(path, false);
     if (this.getInod(ino, 0) != 10) throw new OSFSError('EINVAL', 'path not a symbolic link');
     if (this.writable) { this.updateFileTimes(ino, 4); this.archive = true; }
@@ -764,7 +779,7 @@ class FileSystem {
     else return this.inoarr[ino].toString(options.encoding);
   }
   symlink(target, path, uid, gid) {
-    if (this.log) console.log(`${this.name}: symlink(${inspect(target)}, ${inspect(path)})`);
+    if (this.log) console.log(`${this.ts() + this.name}: symlink(${inspect(target)}, ${inspect(path)})`);
     if (!this.writable) throw new OSFSError('EROFS');
     if (this.exists(path)) throw new OSFSError('EEXIST');
     let tb = Buffer.from(target);
@@ -774,9 +789,9 @@ class FileSystem {
   }
 
   readdir(path, options) {
-    if (this.log) console.log(`${this.name}: readdir(${inspect(path)}${options ? ', ' + inspect(options) : ''}`);
+    if (this.log) console.log(`${this.ts() + this.name}: readdir(${inspect(path)}${options ? ', ' + inspect(options) : ''})`);
     if (options === undefined) options = {};
-    if (options.encoding) options.encoding = 'utf8';
+    if (options.encoding === undefined) options.encoding = 'utf8';
     if (options.withFileTypes === undefined) options.withFileTypes = false;
     let ino = this.geteInode(path);
     let pf = this.parseFolder(this.inoarr[ino], options.encoding);
@@ -797,7 +812,7 @@ class FileSystem {
   }
 
   mkdir(path, options, uid, gid) {
-    if (this.log) console.log(`${this.name}: mkdir(${inspect(path)}${options ? ', ' + inspect(options) : ''}`);
+    if (this.log) console.log(`${this.ts() + this.name}: mkdir(${inspect(path)}${options ? ', ' + inspect(options) : ''})`);
     if (options === undefined) options = {};
     if (options.mode === undefined) options.mode = 0o777;
     if (!this.writable) throw new OSFSError('EROFS');
@@ -806,7 +821,7 @@ class FileSystem {
   }
 
   rename(pathf, patht) {
-    if (this.log) console.log(`${this.name}: rename(${inspect(pathf)}, ${inspect(patht)})`);
+    if (this.log) console.log(`${this.ts() + this.name}: rename(${inspect(pathf)}, ${inspect(patht)})`);
     if (!this.writable) throw new OSFSError('EROFS');
     this.link(pathf, patht, true);
     this.unlink(pathf, true);
@@ -814,7 +829,7 @@ class FileSystem {
   }
 
   rmdir(path, inl) {
-    if (this.log) console.log(`${this.name}: rmdir(${inspect(path)})`);
+    if (this.log) console.log(`${this.ts() + this.name}: rmdir(${inspect(path)})`);
     if (inl === undefined) inl = [];
     if (!this.writable) throw new OSFSError('EROFS');
     let ino = this.geteInode(path, false);
@@ -845,7 +860,7 @@ class FileSystem {
   }
 
   read(ino, sp, buffer, offset, length, position) {
-    if (this.log) console.log(`${this.name}: read(${ino}, ${sp}, ${length}, ${position})`);
+    if (this.log) console.log(`${this.ts() + this.name}: read(${ino}, ${sp}, ${length}, ${position})`);
     if (offset === undefined) offset = 0;
     if (length === undefined) length = buffer.length;
     if (offset + length > buffer.length) throw new OSFSError('EINVAL', 'buffer too short');
@@ -865,7 +880,7 @@ class FileSystem {
     return length;
   }
   write(ino, sp, buffer, offset, length, position) {
-    if (this.log) console.log(`${this.name}: write(${ino}, ${sp}, ${inspect(buffer)}, ${offset}, ${length}, ${position})`);
+    if (this.log) console.log(`${this.ts() + this.name}: write(${ino}, ${sp}, ${inspect(buffer)}, ${offset}, ${length}, ${position})`);
     if (offset === undefined) offset = 0;
     if (length === undefined) length = buffer.length;
     if (!this.writable) throw new OSFSError('EROFS');
@@ -888,7 +903,7 @@ class FileSystem {
     return length;
   }
   writeStr(ino, sp, string, position, encoding) {
-    if (this.log) console.log(`${this.name}: writeStr(${ino}, ${sp}, ${inspect(string)}, ${position}, ${encoding})`);
+    if (this.log) console.log(`${this.ts() + this.name}: writeStr(${ino}, ${sp}, ${inspect(string)}, ${position}, ${encoding})`);
     if (!this.writable) throw new OSFSError('EROFS');
     if (this.getInod(ino, 1) & 128) throw new OSFSError('EPERM', 'file immutable');
     if (typeof position == 'number' && position < 0) throw new OSFSError('EINVAL', 'invalid position');
@@ -910,7 +925,7 @@ class FileSystem {
   }
 
   fsStat() {
-    if (this.log) console.log(`${this.name}: fsStat()`);
+    if (this.log) console.log(`${this.ts() + this.name}: fsStat()`);
     let blocks = this.maxsize / this.blocksize;
     //let blocksused = this.inoarr.reduce((a, x) => a + Math.ceil(x.length / this.blocksize), 0);
     let blocksused = Math.ceil(this.getUsedBytes() / this.blocksize);
@@ -1293,6 +1308,11 @@ class FileSystem {
   }
   importSystemStream() {
     return new VFSImportRFSStream(this);
+  }
+
+  ts() {
+    if (this.logts) return `[${new Date().toISOString()}] `;
+    else return '';
   }
 
   enableLogging(name) {

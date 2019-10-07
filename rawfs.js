@@ -315,9 +315,9 @@ class FileSystem {
         BigInt(ino), // ino
         BigInt(this.inoarr[ino].length), // size
         BigInt(Math.ceil(this.inoarr[ino].length / this.blocksize)), // blocks
-        BigInt(this.getInod(ino, 5)), // atim_msec
+        BigInt(this.getInod(ino, 3)), // atim_msec
         BigInt(this.getInod(ino, 4)), // mtim_msec
-        BigInt(this.getInod(ino, 3)), // ctim_msec
+        BigInt(this.getInod(ino, 5)), // ctim_msec
         null // birthtim_msec
       );
     } else {
@@ -332,9 +332,9 @@ class FileSystem {
         ino, // ino
         this.inoarr[ino].length, // size
         Math.ceil(this.inoarr[ino].length / this.blocksize), // blocks
-        this.getInod(ino, 5), // atim_msec
+        this.getInod(ino, 3), // atim_msec
         this.getInod(ino, 4), // mtim_msec
-        this.getInod(ino, 3), // ctim_msec
+        this.getInod(ino, 5), // ctim_msec
         null // birthtim_msec
       );
     }
@@ -354,9 +354,9 @@ class FileSystem {
         BigInt(ino), // ino
         BigInt(this.inoarr[ino].length), // size
         BigInt(Math.ceil(this.inoarr[ino].length / this.blocksize)), // blocks
-        BigInt(this.getInod(ino, 5)), // atim_msec
+        BigInt(this.getInod(ino, 3)), // atim_msec
         BigInt(this.getInod(ino, 4)), // mtim_msec
-        BigInt(this.getInod(ino, 3)), // ctim_msec
+        BigInt(this.getInod(ino, 5)), // ctim_msec
         null // birthtim_msec
       );
     } else {
@@ -371,9 +371,9 @@ class FileSystem {
         ino, // ino
         this.inoarr[ino].length, // size
         Math.ceil(this.inoarr[ino].length / this.blocksize), // blocks
-        this.getInod(ino, 5), // atim_msec
+        this.getInod(ino, 3), // atim_msec
         this.getInod(ino, 4), // mtim_msec
-        this.getInod(ino, 3), // ctim_msec
+        this.getInod(ino, 5), // ctim_msec
         null // birthtim_msec
       );
     }
@@ -392,9 +392,9 @@ class FileSystem {
         BigInt(ino), // ino
         BigInt(this.inoarr[ino].length), // size
         BigInt(Math.ceil(this.inoarr[ino].length / this.blocksize)), // blocks
-        BigInt(this.getInod(ino, 5)), // atim_msec
+        BigInt(this.getInod(ino, 3)), // atim_msec
         BigInt(this.getInod(ino, 4)), // mtim_msec
-        BigInt(this.getInod(ino, 3)), // ctim_msec
+        BigInt(this.getInod(ino, 5)), // ctim_msec
         null // birthtim_msec
       );
     } else {
@@ -409,9 +409,9 @@ class FileSystem {
         ino, // ino
         this.inoarr[ino].length, // size
         Math.ceil(this.inoarr[ino].length / this.blocksize), // blocks
-        this.getInod(ino, 5), // atim_msec
+        this.getInod(ino, 3), // atim_msec
         this.getInod(ino, 4), // mtim_msec
-        this.getInod(ino, 3), // ctim_msec
+        this.getInod(ino, 5), // ctim_msec
         null // birthtim_msec
       );
     }

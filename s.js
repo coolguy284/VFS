@@ -28,45 +28,50 @@ class VFSReadStream extends stream.Readable {
       this.push(null);
       return;
     }
-    if (this.start) {
-      let rv = true;
-      while (rv) {
-        if (this.start + this.bytesRead + size > this.end) size = this.end - this.start;
-        if (size <= 0) {
-          this.push(null);
-          if (this.autoClose) {
-            this.fsc.closeSync(this.fd);
-            this.closed = true;
+    try {
+      if (this.start) {
+        let rv = true;
+        while (rv) {
+          if (this.start + this.bytesRead + size > this.end) size = this.end - this.start;
+          if (size <= 0) {
+            this.push(null);
+            if (this.autoClose) {
+              this.fsc.closeSync(this.fd);
+              this.closed = true;
+            }
+            rv = false;
+          } else {
+            let buf = Buffer.allocUnsafe(size);
+            this.fsc.readSync(this.fd, buf, 0, size, this.start + this.bytesRead);
+            this.bytesRead += size;
+            size = this._readableState.highWaterMark;
+            rv = this.push(buf);
           }
-          rv = false;
-        } else {
+        }
+      } else {
+        let rv = true;
+        while (rv) {
           let buf = Buffer.allocUnsafe(size);
-          this.fsc.readSync(this.fd, buf, 0, size, this.start + this.bytesRead);
-          this.bytesRead += size;
-          size = this._readableState.highWaterMark;
-          rv = this.push(buf);
-        }
-      }
-    } else {
-      let rv = true;
-      while (rv) {
-        let buf = Buffer.allocUnsafe(size);
-        let len = this.fsc.readSync(this.fd, buf, 0, size);
-        if (len < size) {
-          this.push(buf.slice(0, len));
-          this.bytesRead += len;
-          this.push(null);
-          if (this.autoClose) {
-            this.fsc.closeSync(this.fd);
-            this.closed = true;
-            return;
+          let len = this.fsc.readSync(this.fd, buf, 0, size);
+          if (len < size) {
+            this.push(buf.slice(0, len));
+            this.bytesRead += len;
+            this.push(null);
+            if (this.autoClose) {
+              this.fsc.closeSync(this.fd);
+              this.closed = true;
+              return;
+            }
+          } else {
+            this.bytesRead += size;
+            size = this._readableState.highWaterMark;
+            rv = this.push(buf);
           }
-        } else {
-          this.bytesRead += size;
-          size = this._readableState.highWaterMark;
-          rv = this.push(buf);
         }
       }
+    } catch (e) {
+      if (e instanceof OSFSError) { cb(); this.destroy(); }
+      throw e;
     }
   }
   _destroy(err, cb) {
@@ -100,14 +105,19 @@ class VFSWriteStream extends stream.Writable {
   }
   _write(chunk, enc, cb) {
     if (this.closed) { cb(); return; }
-    if (this.start) {
-      this.fsc.writeSync(this.fd, chunk, 0, chunk.length, this.start + this.bytesWritten);
-      this.bytesWritten += chunk.length;
-      cb();
-    } else {
-      this.fsc.writeSync(this.fd, chunk, 0, chunk.length);
-      this.bytesWritten += chunk.length;
-      cb();
+    try {
+      if (this.start) {
+        this.fsc.writeSync(this.fd, chunk, 0, chunk.length, this.start + this.bytesWritten);
+        this.bytesWritten += chunk.length;
+        cb();
+      } else {
+        this.fsc.writeSync(this.fd, chunk, 0, chunk.length);
+        this.bytesWritten += chunk.length;
+        cb();
+      }
+    } catch (e) {
+      if (e instanceof OSFSError) { cb(); this.destroy(); }
+      throw e;
     }
   }
   _destroy(err, cb) {

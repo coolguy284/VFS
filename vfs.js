@@ -18,10 +18,3 @@ exports = module.exports;
 let test = require('./test.js');
 
 exports.test = test;
-
-let { rfs, rfs2, fsv, fsv2 } = test.makeTestFS();
-
-exports.rfs = rfs;
-exports.rfs2 = rfs2;
-exports.fs = fsv;
-exports.fs2 = fsv2;

@@ -32,6 +32,7 @@ class FileSystemContext {
       [] // mount path in mounted filesystem
     ];
     if (opts.fd === undefined) opts.fd = [];
+    if (opts.devices === undefined) opts.devices = {};
     this.fs = fs;
     this.cwd = opts.cwd;
     this.uid = opts.uid;
@@ -41,6 +42,7 @@ class FileSystemContext {
     this.groups = opts.groups;
     this.mounts = opts.mounts;
     this.fd = opts.fd;
+    this.devices = opts.devices;
   }
 
   mountNormalize(path, symlink, mount, cwd) {
@@ -325,10 +327,10 @@ class FileSystemContext {
     let fscf = this.mountNormalize(pathf, false);
     let fsct = this.mountNormalize(patht);
     if (!fscf[0].fs || !fsct[0].fs) {
-      if (!fscf[0].fs && fsct[0].fs || fscf[0].fs && !fsct[0].fs) throw new Error('EINVAL', 'cannot link to different filesystems');
+      if (!fscf[0].fs && fsct[0].fs || fscf[0].fs && !fsct[0].fs) throw new OSFSError('EXDEV');
       return fscf[0].linkSync(fscf[1], fsct[1]);
     }
-    if (!Object.is(fscf[0].fs, fsct[0].fs)) throw new Error('EINVAL', 'cannot link to different filesystems');
+    if (!Object.is(fscf[0].fs, fsct[0].fs)) throw new OSFSError('EXDEV');
     if (!fscf[0].getPerms(fscf[0].fs.geteInode(fscf[1], false)).read) throw new OSFSError('EACCES');
     if (!fsct[0].getPerms(fsct[0].fs.geteInode(parentPath(fsct[1]))).write) throw new OSFSError('EACCES');
     if (fsct[0].fs.exists(fsct[1]))
@@ -418,12 +420,15 @@ class FileSystemContext {
     return fscf[0].fs.rename(fscf[1], fsct[1]);
   }
 
-  rmdirSync(path) {
-    if (this.log) console.log(`${this.ts() + this.name}: rmdirSync(${inspect(path)})`);
+  rmdirSync(path, options) {
+    if (this.log) console.log(`${this.ts() + this.name}: rmdirSync(${inspect(path)}${options ? ' ' + inspect(options) : ''})`);
     let fsc = this.mountNormalize(path, false);
-    if (!fsc[0].fs) return fsc[0].rmdirSync(fsc[1]);
+    if (!fsc[0].fs) return fsc[0].rmdirSync(fsc[1], options);
     if (!fsc[0].getPerms(fsc[0].fs.geteInode(fsc[1], false)).write) throw new OSFSError('EACCES');
-    return fsc[0].fs.rmdir(fsc[1]);
+    if (options && options.recursive)
+      return fsc[0].fs.rmdirRecursive(fsc[1]);
+    else
+      return fsc[0].fs.rmdir(fsc[1]);
   }
 
   realpath(path, options, cb) {
@@ -639,10 +644,11 @@ class FileSystemContext {
     });
   }
 
-  rmdir(path, cb) {
+  rmdir(path, options, cb) {
+    if (cb === undefined) {cb = options; options = undefined;}
     setImmediate(() => {
       try {
-        return cb(undefined, this.rmdirSync(path));
+        return cb(undefined, this.rmdirSync(path, options));
       } catch (e) {
         return cb(e);
       }

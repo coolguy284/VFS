@@ -7,10 +7,6 @@ function makeTestFS() {
   let rfs2 = new FileSystem({writable:true, maxsize:2**29});
   let fsv = new FileSystemContext(rfs, {uid:1000});
   let fsv2 = new FileSystemContext(rfs2, {uid:1000});
-  //rfs.enableLogging('rfs');
-  //rfs2.enableLogging('rfs');
-  //fsv.enableLogging('fsv');
-  //fsv2.enableLogging('fsv2');
   fsv.mkdirSync('/dir');
   fsv.writeFileSync('/dir/Some File.txt', 'This is a test file, inside a folder.');
   fsv.linkSync('/dir/Some File.txt', '/dir/File Hardlink.txt');
@@ -31,7 +27,7 @@ function makeTestFS() {
   fsv.mount('/fs2', 0, fsv2, '/ell');
   fsv2.mkdirSync('/ell');
   fsv2.writeFileSync('/ell/test.txt', 'A test text file in a mounted filesystem.');
-  return { rfs, rfs2, fsv, fsv2 };
+  return { rfs, rfs2, fs: fsv, fs2: fsv2 };
 }
 
 function pprinterrors() {
@@ -135,10 +131,18 @@ function streamstest() {
 function devzeropipe() {
   var fs = require('fs');
   console.log('START');
-  vfs.fs.fs.maxsize = 2 ** 25;
-  var s1 = fs.createReadStream('/dev/zero', {highWaterMark:262144/4});
-  vfs.fs.writeFileSync('/devzero', Buffer.alloc(33000000));
-  var s2 = vfs.fs.createWriteStream(null, {fd:vfs.fs.openSync('/devzero', 'r+'),highWaterMark:262144,autoClose:true});
+  vfs.fs.fs.maxsize = 2 ** 27;
+  s1 = fs.createReadStream('/dev/zero', {highWaterMark:262144});
+  if (1) { // pre-allocate buffer
+    var t2 = Date.now(), bsz;
+    vfs.fs.writeFileSync('/devzero', Buffer.alloc(bsz = vfs.fs.fs.getFreeBytes() - 32));
+    var tt = (Date.now() - t2) / 1000;
+    console.log('pre allocated in ' + tt + ' seconds');
+    console.log(bsz / tt + ' bytes/second');
+    s2 = vfs.fs.createWriteStream(null, {fd:vfs.fs.openSync('/devzero', 'r+'),highWaterMark:262144,autoClose:true,autoDestroy:true});
+  } else {
+    s2 = vfs.fs.createWriteStream('/devzero', {highWaterMark:262144,autoClose:true});
+  }
   var t1 = Date.now();
   s2.on('close', () => {
     var t = (Date.now() - t1) / 1000;
@@ -179,4 +183,20 @@ function bufxfffilnamtest() {
   console.log(vfs.fs.readFileSync(Buffer.from('/dir/test\xff', 'latin1')).toString());
 }
 
-module.exports = { makeTestFS, pprinterrors, importexportequalcheck, testfnbuf, complexrmdir, strangefilenames, basicnormalize, realfsmount, streamstest, devzeropipe, pathsplittest, buffilnamtest, bufxfffilnamtest };
+function exportstreamtest() {
+  var s = new BufWriteStream(), eb, tb;
+  var ess = vfs.rfs.exportSystemStream();
+  ess.pipe(s);
+  s.on('finish', () => {
+    console.log('export finished');
+    eb = s.buf;
+    tb = vfs.rfs.exportSystem();
+    console.log(eb.length + ' bytes');
+    console.log(eb);
+    console.log(tb.length + ' bytes');
+    console.log(tb);
+    console.log(eb.equals(tb) ? 'equal' : 'not equal');
+  });
+}
+
+module.exports = { makeTestFS, pprinterrors, importexportequalcheck, testfnbuf, complexrmdir, strangefilenames, basicnormalize, realfsmount, streamstest, devzeropipe, pathsplittest, buffilnamtest, bufxfffilnamtest, exportstreamtest };

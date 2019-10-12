@@ -1,6 +1,7 @@
 let { getKeyByValue, getcTime, parentPath, pathEnd, normalize } = require('./helperf.js');
 let { OSFSError } = require('./errors.js');
 let { VFSReadStream, VFSWriteStream } = require('./s.js');
+let fs = require('fs');
 let THROWONBADUGID = false;
 let CONVERTBACKSLASH = true;
 
@@ -217,12 +218,14 @@ class FileSystemContext {
   chattrSync(path, attrb) {
     if (this.log) console.log(`${this.ts() + this.name}: chattrSync(${inspect(path)}, ${attrb})`);
     let fsc = this.mountNormalize(path);
+    if (!fsc[0].fs) throw new Error('EOPNOTSUPP');
     if (this.uid != fsc[0].fs.getInod(fsc[0].fs.geteInode(fsc[1]), 7) && this.uid != 0) throw new OSFSError('EACCES', 'only owner can change attrs');
     return fsc[0].fs.chattr(path, attrb);
   }
   lchattrSync(path, attrb) {
     if (this.log) console.log(`${this.ts() + this.name}: lchattrSync(${inspect(path)}, ${attrb})`);
     let fsc = this.mountNormalize(path, false);
+    if (!fsc[0].fs) throw new Error('EOPNOTSUPP');
     if (this.uid != fsc[0].fs.getInod(fsc[0].fs.geteInode(fsc[1], false), 7) && this.uid != 0) throw new OSFSError('EACCES', 'only owner can change attrs');
     return fsc[0].fs.lchattr(path, attrb);
   }
@@ -236,18 +239,21 @@ class FileSystemContext {
 
   readFileSync(path, options) {
     if (this.log) console.log(`${this.ts() + this.name}: readFileSync(${inspect(path)}${options ? ', ' + inspect(options) : ''})`);
+    if (typeof options == 'string') options = {encoding:options};
+    if (options === undefined) options = {};
+    if (options.encoding === undefined) options.encoding = null;
     if (typeof path == 'number') {
       let fdo = this.fd[path];
       if (fdo === undefined) throw new Error('bad file descriptor');
       if (fdo[0] == 'f') return fdo[1].readFileSync(fdo[2], options);
       if (fdo[0].indexOf('r') < 0) throw new Error('file not opened in read mode');
       if (!this.getPerms(fdo[2]).read) throw new OSFSError('EACCES');
-      return fdo[1].fs.readFileFD(fdo[2], fdo[3], options);
+      return fdo[1].fs.freadFile(fdo[2], fdo[3], options.encoding);
     } else {
       let fsc = this.mountNormalize(path);
       if (!fsc[0].fs) return fsc[0].readFileSync(fsc[1], options);
       if (!this.getPerms(fsc[0].fs.geteInode(fsc[1])).read) throw new OSFSError('EACCES');
-      return fsc[0].fs.readFile(fsc[1], options);
+      return fsc[0].fs.readFile(fsc[1], options.encoding);
     }
   }
   writeFileSync(path, buf, options) {
@@ -258,7 +264,7 @@ class FileSystemContext {
       if (fdo[0] == 'f') return fdo[1].writeFileSync(fdo[2], buf, options);
       if (fdo[0].indexOf('w') < 0) throw new Error('file not opened in write mode');
       if (!fdo[1].getPerms(fdo[2]).write) throw new OSFSError('EACCES');
-      return fdo[1].fs.writeFileFD(fdo[2], buf, fdo[3], options);
+      return fdo[1].fs.fwriteFile(fdo[2], buf, fdo[3], options);
     } else {
       let fsc = this.mountNormalize(path);
       if (!fsc[0].fs) return fsc[0].writeFileSync(fsc[1], buf, options);
@@ -276,7 +282,7 @@ class FileSystemContext {
       if (fdo[0] == 'f') return fdo[1].appendFileSync(fdo[2], buf, options);
       if (fdo[0].indexOf('a') < 0) throw new Error('file not opened in append mode');
       if (!fdo[1].getPerms(fdo[2]).write) throw new OSFSError('EACCES');
-      return fdo[1].appendFileFD(fdo[2], fdo[3], buf, options);
+      return fdo[1].fappendFile(fdo[2], fdo[3], buf, options);
     } else {
       let fsc = this.mountNormalize(path);
       if (!fsc[0].fs) return fsc[0].appendFileSync(fsc[1], buf, options);
@@ -322,6 +328,15 @@ class FileSystemContext {
     return new VFSWriteStream(this, path, options);
   }
 
+  mknodSync(path, mode, major, minor) {
+    let fsc = this.mountNormalize(path);
+    if (!fsc[0].fs) throw new Error('EOPNOTSUPP');
+    if (!fsc[0].getPerms(fsc[0].fs.geteInode(parentPath(fsc[1]))).write) throw new OSFSError('EACCES');
+    if (fsc[0].fs.exists(fsc[1]))
+    if (!fsc[0].getPerms(fsc[0].fs.geteInode(fsc[1])).write) throw new OSFSError('EACCES');
+    return fsc[0].fs.mknod(fsc[1], mode, major, minor);
+  }
+
   linkSync(pathf, patht) {
     if (this.log) console.log(`${this.ts() + this.name}: linkSync(${inspect(pathf)}, ${inspect(patht)})`);
     let fscf = this.mountNormalize(pathf, false);
@@ -341,7 +356,9 @@ class FileSystemContext {
     if (this.log) console.log(`${this.ts() + this.name}: unlinkSync(${inspect(path)})`);
     let fsc = this.mountNormalize(path, false);
     if (!fsc[0].fs) return fsc[0].unlinkSync(fsc[1]);
-    if (!fsc[0].getPerms(fsc[0].fs.geteInode(fsc[1], false)).write) throw new OSFSError('EACCES');
+    let ino = fsc[0].fs.geteInode(fsc[1], false);
+    if (fsc[0].fs.getInod(ino, 0) == 4) throw new OSFSError('EPERM', 'cannot unlink directory');
+    if (!fsc[0].getPerms(ino).write) throw new OSFSError('EACCES');
     return fsc[0].fs.unlink(fsc[1]);
   }
 
@@ -751,6 +768,12 @@ class FileSystemContext {
     if (fdo[0].indexOf('r') < 0) throw new Error('file not opened in read mode');
     if (!fdo[1].getPerms(fdo[2]).read) throw new OSFSError('EACCES');
     let res = fdo[1].fs.read(fdo[2], fdo[3], buffer, offset, length, position);
+    if (typeof res == 'object') {
+      if (!this.devices[res.major] || !this.devices[res.major][res.minor]) throw new OSFSError('ENXIO');
+      let dev = this.devices[res.major][res.minor];
+      if (!dev.read) throw new OSFSError('EOPNOTSUPP');
+      res = dev.read(res.buffer, res.offset, res.length, res.position);
+    }
     if (position == null) fdo[3] += res;
     return res;
   }
@@ -764,11 +787,17 @@ class FileSystemContext {
     let res;
     if (typeof buffer == 'string') {
       res = fdo[1].fs.writeStr(fdo[2], fdo[3], buffer, offset, length);
-      if (offset == null) fdo[3] += res;
+      position = offset;
     } else {
       res = fdo[1].fs.write(fdo[2], fdo[3], buffer, offset, length, position);
-      if (position == null) fdo[3] += res;
     }
+    if (typeof res == 'object') {
+      if (!this.devices[res.major] || !this.devices[res.major][res.minor]) throw new OSFSError('ENXIO');
+      let dev = this.devices[res.major][res.minor];
+      if (!dev.read) throw new OSFSError('EOPNOTSUPP');
+      res = dev.read(res.buffer, res.offset, res.length, res.position);
+    }
+    if (position == null) fdo[3] += res;
     return res;
   }
 
@@ -778,7 +807,13 @@ class FileSystemContext {
     if (fdo === undefined) throw new Error('bad file descriptor');
     if (fdo[0] == 'f') return fdo[1].fstatSync(fdo[2], options);
     if (!fdo[1].getPerms(fdo[2]).read) throw new OSFSError('EACCES');
-    return fdo[1].fs.statFD(fdo[2], options);
+    let statres = fdo[1].fs.fstat(fdo[2], options);
+    if (statres instanceof fs.Stats) return statres;
+    if (!this.devices[statres.major] || !this.devices[statres.major][statres.minor]) throw new OSFSError('ENXIO');
+    let dev = this.devices[statres.major][statres.minor];
+    let res = dev.stat();
+    statres.statobj.length = res.length || 0;
+    return statres.statobj;
   }
 
   fchmodSync(fd, mode) {
@@ -787,7 +822,7 @@ class FileSystemContext {
     if (fdo === undefined) throw new Error('bad file descriptor');
     if (fdo[0] == 'f') return fdo[1].fchmodSync(fdo[2], mode);
     if (fdo[0].indexOf('w') < 0) throw new Error('file not opened in write mode');
-    return fdo[1].fs.chmodFD(fdo[2], mode);
+    return fdo[1].fs.fchmod(fdo[2], mode);
   }
   fchownSync(fd, uid, gid) {
     if (this.log) console.log(`${this.ts() + this.name}: fchownSync(${fd}, ${uid}, ${gid})`);
@@ -795,7 +830,7 @@ class FileSystemContext {
     if (fdo === undefined) throw new Error('bad file descriptor');
     if (fdo[0] == 'f') return fdo[1].fchownSync(fdo[2], uid, gid);
     if (fdo[0].indexOf('w') < 0) throw new Error('file not opened in write mode');
-    return fdo[1].fs.chownFD(fdo[2], uid, gid);
+    return fdo[1].fs.fchown(fdo[2], uid, gid);
   }
   futimesSync(fd, atime, mtime) {
     if (this.log) console.log(`${this.ts() + this.name}: futimesSync(${fd}, ${atime}, ${mtime})`);
@@ -803,7 +838,7 @@ class FileSystemContext {
     if (fdo === undefined) throw new Error('bad file descriptor');
     if (fdo[0] == 'f') return fdo[1].futimesSync(fdo[2], atime, mtime);
     if (fdo[0].indexOf('w') < 0) throw new Error('file not opened in write mode');
-    return fdo[1].fs.utimesFD(fdo[2], atime, mtime);
+    return fdo[1].fs.futimes(fdo[2], atime, mtime);
   }
 
   ftruncateSync(fd, len) {
@@ -812,7 +847,7 @@ class FileSystemContext {
     if (fdo === undefined) throw new Error('bad file descriptor');
     if (fdo[0] == 'f') return fdo[1].ftruncateSync(fdo[2], len);
     if (fdo[0].indexOf('w') < 0) throw new Error('file not opened in write mode');
-    return fdo[1].fs.truncateFD(fdo[2], len);
+    return fdo[1].fs.ftruncate(fdo[2], len);
   }
 
   read(fd, buffer, offset, length, position, cb) {

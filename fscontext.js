@@ -1,4 +1,4 @@
-let { getKeyByValue, getcTime, parentPath, pathEnd, normalize } = require('./helperf.js');
+let { getKeyByValue, getcTime, parentPath, pathEnd, normalize, major: majorf, minor: minorf } = require('./helperf.js');
 let { OSFSError } = require('./errors.js');
 let { VFSReadStream, VFSWriteStream } = require('./s.js');
 let fs = require('fs');
@@ -329,6 +329,11 @@ class FileSystemContext {
   }
 
   mknodSync(path, mode, major, minor) {
+    if (minor === undefined) {
+      let dev = major;
+      major = majorf(dev);
+      minor = minorf(dev);
+    }
     let fsc = this.mountNormalize(path);
     if (!fsc[0].fs) throw new Error('EOPNOTSUPP');
     if (!fsc[0].getPerms(fsc[0].fs.geteInode(parentPath(fsc[1]))).write) throw new OSFSError('EACCES');

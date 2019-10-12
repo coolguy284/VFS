@@ -1,6 +1,6 @@
 // jshint -W041
 let fs = require('fs');
-let { getcTime, pathSplit, pathJoin, parentPath, pathEnd, normalize, fnbufencode, fnbufdecode, major, minor, makedev } = require('./helperf.js');
+let { getcTime, pathSplit, pathJoin, parentPath, pathEnd, normalize, fnbufencode, fnbufdecode, major: majorf, minor : minorf, makedev } = require('./helperf.js');
 let { ReadOnlyFSError, OSFSError } = require('./errors.js');
 let { VFSImportRFSStream, VFSExportRFSStream } = require('./s.js');
 let INODSIZE = 32;

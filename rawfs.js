@@ -828,8 +828,26 @@ class FileSystem {
     this.archive = true;
   }
 
-  rmdir(path, inl) {
+  rmdir(path) {
     if (this.log) console.log(`${this.ts() + this.name}: rmdir(${inspect(path)})`);
+    if (inl === undefined) inl = [];
+    if (!this.writable) throw new OSFSError('EROFS');
+    let ino = this.geteInode(path, false);
+    if (inl.indexOf(ino) < 0) inl.push(ino);
+    let typ = this.getInod(ino, 0);
+    if (typ == 8) throw new OSFSError('ENOTDIR', 'cannot rmdir a file');
+    if (typ == 10) {
+      this.unlink(path);
+      return;
+    }
+    if (this.getInod(ino, 1) & 128) throw new OSFSError('EPERM', 'folder immutable');
+    if (this.parseFolder(this.inoarr[ino]).length != 0) throw new OSFSError('ENOTEMPTY');
+    this.unlink(path);
+    this.archive = true;
+  }
+
+  rmdirRecursive(path, inl) {
+    if (this.log) console.log(`${this.ts() + this.name}: rmdirRecursive(${inspect(path)})`);
     if (inl === undefined) inl = [];
     if (!this.writable) throw new OSFSError('EROFS');
     let ino = this.geteInode(path, false);
@@ -851,7 +869,7 @@ class FileSystem {
         if (refcnt > 1 && refcnt > this.internalLinks(inof)) {
           this.unlink(path + '/' + arr[i][0]);
         } else {
-          this.rmdir(path + '/' + arr[i][0], inl);
+          this.rmdirRecursive(path + '/' + arr[i][0], inl);
         }
       } else this.unlink(path + '/' + arr[i][0]);
     }
@@ -1242,7 +1260,7 @@ class FileSystem {
       fibuf.writeUInt32BE(this.fi[i], i * 4);
     }
     head.writeUInt8(2, 0);
-    head.writeUInt8(this.writable ? 128 : 0 + this.wipeonfi ? 64 : 0 + this.archive ? 32 : 0 + this.allowinoacc ? 16 : 0, 1);
+    head.writeUInt8(this.writable * 128 + this.wipeonfi * 64 + this.archive * 32 + this.allowinoacc * 16, 1);
     head.writeUInt8(Math.ceil(Math.log2(this.blocksize)), 2);
     head.writeUIntBE(this.maxsize, 3, 6);
     head.writeUInt32BE(this.maxinodes, 9);

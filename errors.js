@@ -19,14 +19,16 @@ ReadOnlyFSError.prototype.name = 'ReadOnlyFSError';
 
 let osfserrcodes = {
   'EPERM': [1, 'Operation not permitted'],
-  'EACCES': [13, 'Permission denied'],
   'ENOENT': [2, 'No such file or directory'],
+  'EACCES': [13, 'Permission denied'],
   'EEXIST': [17, 'File exists'],
+  'EXDEV': [18, 'Cross-device link'],
   'ENOTDIR': [20, 'Not a directory'],
   'EISDIR': [21, 'Is a directory'],
   'EINVAL': [22, 'Invalid argument'],
   'ENOSPC': [28, 'No space left on device'],
   'EROFS': [30, 'Read-only file system'],
+  'ENOTEMPTY': [39, 'Directory not empty'],
 };
 
 class OSFSError extends FSError {

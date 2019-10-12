@@ -20,6 +20,8 @@ ReadOnlyFSError.prototype.name = 'ReadOnlyFSError';
 let osfserrcodes = {
   'EPERM': [1, 'Operation not permitted'],
   'ENOENT': [2, 'No such file or directory'],
+  'ENXIO': [6, 'No such device or address'],
+  'ENOMEM': [12, 'Out of memory'],
   'EACCES': [13, 'Permission denied'],
   'EEXIST': [17, 'File exists'],
   'EXDEV': [18, 'Cross-device link'],
@@ -29,6 +31,10 @@ let osfserrcodes = {
   'ENOSPC': [28, 'No space left on device'],
   'EROFS': [30, 'Read-only file system'],
   'ENOTEMPTY': [39, 'Directory not empty'],
+  'EOPNOTSUPP': [95, 'Operation not supported on transport endpoint'],
+  'EISCONN': [106, 'Transport endpoint is already connected'],
+  'ENOTCONN': [107, 'Transport endpoint is not connected'],
+  'ESHUTDOWN': [108, 'Cannot send after transport endpoint shutdown'],
 };
 
 class OSFSError extends FSError {

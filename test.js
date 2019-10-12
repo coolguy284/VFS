@@ -27,6 +27,88 @@ function makeTestFS() {
   fsv.mount('/fs2', 0, fsv2, '/ell');
   fsv2.mkdirSync('/ell');
   fsv2.writeFileSync('/ell/test.txt', 'A test text file in a mounted filesystem.');
+  fsv.mkdirSync('/dev');
+  fsv.mknodSync('/dev/null', 2, 1, 3);
+  fsv.mknodSync('/dev/zero', 2, 1, 5);
+  fsv.mknodSync('/dev/full', 2, 1, 7);
+  fsv.mknodSync('/dev/random', 2, 1, 8); // NOT SECURE BC USES MATH RANDOM!!!
+  fsv.mknodSync('/dev/urandom', 2, 1, 9); // NOT SECURE BC USES MATH RANDOM!!!
+  fsv.devices[1] = {};
+  fsv.devices[1][3] = {
+    stat: () => {
+      return {
+        size: 0,
+      };
+    },
+    read: (buffer, offset, length, position) => {
+      return 0;
+    },
+    write: (buffer, offset, length, position) => {
+      return length;
+    },
+  };
+  fsv.devices[1][5] = {
+    stat: () => {
+      return {
+        size: 0,
+      };
+    },
+    read: (buffer, offset, length, position) => {
+      buffer.fill(0, offset, offset + length);
+      return length;
+    },
+    write: (buffer, offset, length, position) => {
+      return length;
+    },
+  };
+  fsv.devices[1][7] = {
+    stat: () => {
+      return {
+        size: 0,
+      };
+    },
+    read: (buffer, offset, length, position) => {
+      buffer.fill(0, offset, offset + length);
+      return length;
+    },
+    write: (buffer, offset, length, position) => {
+      throw new vfs.OSFSError('ENOSPC');
+    },
+  };
+  fsv.devices[1][8] = {
+    stat: () => {
+      return {
+        size: 0,
+      };
+    },
+    read: (buffer, offset, length, position) => {
+      var m = Math.floor(length / 4) * 4;
+      var ex = length - m;
+      for (var i = offset; i < offset + m; i += 4) {
+        buffer.writeUInt32BE(Math.floor(Math.random() * 2**32), i);
+      }
+      if (ex > 0) {
+        switch (ex) {
+          case 1:
+            buffer.writeUInt8(Math.floor(Math.random() * 256), offset + m);
+            break;
+          case 2:
+            buffer.writeUInt16BE(Math.floor(Math.random() * 65536), offset + m);
+            break;
+          case 3:
+            var v = Math.random() * 2**24;
+            buffer.writeUInt16BE(Math.floor(v / 256), offset + m);
+            buffer.writeUInt8(Math.floor(v % 256), offset + m + 2);
+            break;
+        }
+      }
+      return length;
+    },
+    write: (buffer, offset, length, position) => {
+      return length;
+    },
+  };
+  fsv.devices[1][9] = fsv.devices[1][8];
   return { rfs, rfs2, fs: fsv, fs2: fsv2 };
 }
 

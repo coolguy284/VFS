@@ -1,9 +1,11 @@
 function getKeyByValue(object, value) {
   return Object.keys(object).find(key => object[key] === value);
 }
+
 function getcTime() {
   return new Date().getTime();
 }
+
 function pathSplit(path) {
   if (typeof path == 'string') {
     return path.split('/');
@@ -35,16 +37,19 @@ function pathJoin(patharr) {
     return Buffer.concat(bca);*/
   }
 }
+
 function parentPath(path) {
   if (path == '/') return '/';
   if (Buffer.isBuffer(path) && path.length == 1 && path[0] == 0x2f) return Buffer.from('/');
   let patharr = pathSplit(path);
   return pathJoin(patharr.slice(0, patharr.length - 1));
 }
+
 function pathEnd(path) {
   let patharr = pathSplit(path);
   return patharr[patharr.length - 1];
 }
+
 function normalize(path, cwd) {
   let isbuf;
   if (Buffer.isBuffer(path) || Buffer.isBuffer(cwd)) {
@@ -79,6 +84,7 @@ function normalize(path, cwd) {
   if (isbuf) return Buffer.from(rbp, 'latin1');
   else return rbp;
 }
+
 function fnbufencode(buf) {
   let bufslices = [];
   let s = 0;
@@ -111,4 +117,12 @@ function fnbufdecode(buf) {
   if (s < buf.length) bufslices.push(buf.slice(s, buf.length));
   return Buffer.concat(bufslices);
 }
-module.exports = { getcTime, pathSplit, pathJoin, parentPath, pathEnd, normalize, fnbufencode, fnbufdecode };
+
+let MINORBITS = 20;
+let MINORMASK = (1 << MINORBITS) - 1;
+
+let major = (dev) => dev >> MINORBITS;
+let minor = (dev) => dev & MINORMASK;
+let makedev = (ma, mi) => (ma << MINORBITS) | mi;
+
+module.exports = { getcTime, pathSplit, pathJoin, parentPath, pathEnd, normalize, fnbufencode, fnbufdecode, MINORBITS, MINORMASK, major, minor, makedev };

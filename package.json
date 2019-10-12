@@ -1,6 +1,6 @@
 {
   "name": "vfs",
-  "description": "[Old Commit from Feb 28 2019] A completely virtual file system stored in RAM.",
-  "version": "0.10.0",
+  "description": "[Old Commit from Mar 01 2019] A completely virtual file system stored in RAM.",
+  "version": "0.11.0",
   "main": "vfs.js"
 }

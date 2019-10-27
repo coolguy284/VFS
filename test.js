@@ -185,6 +185,7 @@ function basicnormalize() {
 }
 
 function realfsmount() {
+  var fs = require('fs');
   console.log('READDIR');
   console.log(vfs.fs.readdirSync('/fs2'));
   vfs.fs.mkdirSync('/realfs');

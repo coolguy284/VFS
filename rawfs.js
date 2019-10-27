@@ -319,24 +319,7 @@ class FileSystem {
 
   statino(ino, options) {
     let statobj;
-    if (options && options.bigint) {
-      statobj = new fs.Stats(
-        BigInt(50), // dev
-        BigInt(this.getInod(ino, 0) * 0o10000 + this.getInod(ino, 6)), // mode
-        BigInt(this.getInod(ino, 2)), // nlink
-        BigInt(this.getInod(ino, 7)), // uid
-        BigInt(this.getInod(ino, 8)), // gid
-        BigInt(0), // rdev
-        BigInt(this.blocksize), // blksize
-        BigInt(ino), // ino
-        BigInt(this.inoarr[ino].length), // size
-        BigInt(Math.ceil(this.inoarr[ino].length / this.blocksize)), // blocks
-        BigInt(this.getInod(ino, 3)), // atim_msec
-        BigInt(this.getInod(ino, 4)), // mtim_msec
-        BigInt(this.getInod(ino, 5)), // ctim_msec
-        null // birthtim_msec
-      );
-    } else {
+    if (!(options && options.bigint)) {
       statobj = new fs.Stats(
         50, // dev
         this.getInod(ino, 0) * 0o10000 + this.getInod(ino, 6), // mode
@@ -351,6 +334,23 @@ class FileSystem {
         this.getInod(ino, 3), // atim_msec
         this.getInod(ino, 4), // mtim_msec
         this.getInod(ino, 5), // ctim_msec
+        null // birthtim_msec
+      );
+    } else {
+      statobj = new fs.Stats(
+        BigInt(50), // dev
+        BigInt(this.getInod(ino, 0) * 0o10000 + this.getInod(ino, 6)), // mode
+        BigInt(this.getInod(ino, 2)), // nlink
+        BigInt(this.getInod(ino, 7)), // uid
+        BigInt(this.getInod(ino, 8)), // gid
+        BigInt(0), // rdev
+        BigInt(this.blocksize), // blksize
+        BigInt(ino), // ino
+        BigInt(this.inoarr[ino].length), // size
+        BigInt(Math.ceil(this.inoarr[ino].length / this.blocksize)), // blocks
+        BigInt(this.getInod(ino, 3)), // atim_msec
+        BigInt(this.getInod(ino, 4)), // mtim_msec
+        BigInt(this.getInod(ino, 5)), // ctim_msec
         null // birthtim_msec
       );
     }

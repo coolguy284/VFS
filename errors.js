@@ -50,13 +50,6 @@ class OSFSError extends FSError {
 }
 OSFSError.prototype.name = 'OSFSError';
 
-class InvalUGIDFSError extends FSError {
-  constructor(msg) {
-    super(msg || 'read-only filesystem');
-  }
-}
-ReadOnlyFSError.prototype.name = 'ReadOnlyFSError';
-
 module.exports = {
   FSError, ReadOnlyFSError, OSFSError
 };

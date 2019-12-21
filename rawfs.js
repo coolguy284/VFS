@@ -457,7 +457,7 @@ class FileSystem {
     if (!this.writable) throw new OSFSError('EROFS');
     return this.chownino(ino, uid, gid);
   }
-  chattrino(path, attrs) {
+  chattrino(ino, attrs) {
     if (!this.writable) throw new OSFSError('EROFS');
     let attrb = this.getInod(ino, 1);
     for (var i in attrs) {
@@ -495,7 +495,7 @@ class FileSystem {
     if (!this.writable) throw new OSFSError('EROFS');
     return this.chattrino(ino, attrs);
   }
-  utimesino(path, atime, mtime) {
+  utimesino(ino, atime, mtime) {
     if (!this.writable) throw new OSFSError('EROFS');
     if (this.getInod(ino, 1) & 128) throw new OSFSError('EPERM', 'file immutable');
     this.setInod(ino, 5, Number(atime));
@@ -747,16 +747,16 @@ class FileSystem {
   rename(pathf, patht) {
     if (this.log) console.log(`${this.ts() + this.name}: rename(${inspect(pathf)}, ${inspect(patht)})`);
     if (!this.writable) throw new OSFSError('EROFS');
-    let inofp = this.geteInode(parentPath(pathf));
-    if (this.getInod(inofp, 1) & 128) throw new OSFSError('EPERM', 'parent folder immutable');
-    let inof = this.geteInode(pathf, false);
-    if (this.getInod(inof, 1) & 128) throw new OSFSError('EPERM', 'file immutable');
+    let inop = this.geteInode(parentPath(pathf));
+    if (this.getInod(inop, 1) & 128) throw new OSFSError('EPERM', 'parent folder immutable');
+    let ino = this.geteInode(pathf, false);
+    if (this.getInod(ino, 1) & 128) throw new OSFSError('EPERM', 'file immutable');
     if (this.exists(patht)) {
       if (this.getInod(this.geteInode(patht), 0) != 8) throw new OSFSError('EPERM', 'cannot silently unlink non-file in rename');
       this.unlink(patht);
     }
     this.appendFolder(this.geteInode(parentPath(patht)), pathEnd(patht), ino);
-    this.remFromFolder(inofp, pathEnd(pathf));
+    this.remFromFolder(inop, pathEnd(pathf));
     this.archive = true;
   }
 

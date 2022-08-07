@@ -27,4 +27,4 @@
  ```
 
 ## Docs
-- [Refrence](./REFRENCE.md)
+- [Reference](./REFERENCE.md)
